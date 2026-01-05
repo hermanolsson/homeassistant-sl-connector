@@ -8,7 +8,8 @@ A Home Assistant custom integration for real-time public transit departures from
 - Filter by transport mode (train, metro, bus, tram, ferry)
 - Filter by specific line
 - Filter by direction (shows actual destinations)
-- Multiple departure sensors per station
+- Single sensor with `upcoming` array of all departures
+- Compatible with [Trafiklab Timetable Card](https://github.com/MrSjodin/HomeAssistant_Trafiklab_Timetable_Card)
 - Transport mode specific icons
 - Delay detection with automatic calculation
 - Service disruption/deviation alerts
@@ -84,31 +85,22 @@ Each item in the `upcoming` array contains:
 
 ## Example Dashboard Cards
 
+### Trafiklab Timetable Card (Recommended)
+```yaml
+type: custom:trafiklab-timetable-card
+entity: sensor.sl_barkarby_43_nynashamn_departures
+title: Pendeltåg från Barkarby
+```
+
 ### Markdown Card
 ```yaml
 type: markdown
 title: Pendeltåg från Barkarby
 content: |
-  {% set s = 'sensor.sl_barkarby_40_next' %}
-  **{{ state_attr(s, 'time_formatted') }}** → {{ state_attr(s, 'destination') }}
-  Spår {{ state_attr(s, 'platform') }}
-  {% if state_attr(s, 'delay_minutes') > 0 %}· Försenad {{ state_attr(s, 'delay_minutes') }} min{% endif %}
-```
-
-### Entities Card
-```yaml
-type: entities
-title: Nästa tåg
-entities:
-  - entity: sensor.sl_barkarby_40_next
-  - type: attribute
-    entity: sensor.sl_barkarby_40_next
-    attribute: destination
-    name: Destination
-  - type: attribute
-    entity: sensor.sl_barkarby_40_next
-    attribute: minutes_until
-    name: Minutes
+  {% set deps = state_attr('sensor.sl_barkarby_43_nynashamn_departures', 'upcoming') %}
+  {% for dep in deps[:3] %}
+  **{{ dep.time_formatted }}** → {{ dep.destination }} · Spår {{ dep.platform }}
+  {% endfor %}
 ```
 
 ## API

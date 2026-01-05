@@ -48,12 +48,12 @@ Configurable after setup via "Configure" button (mainly for legacy entries):
 
 ## Sensors
 
-Creates N sensors per config entry (based on num_departures):
-- State: Display time from API ("4 min", "Nu", "23:45")
+Creates one sensor per config entry with an `upcoming` array:
+- State: Next departure display time from API ("4 min", "Nu", "23:45")
 - Icon: Transport mode specific (train, subway, bus, tram, ferry) or clock-alert when delayed
-- Attributes (compatible with Trafiklab Timetable Card):
-  - Card attrs: line, destination, scheduled_time, expected_time, time_formatted, minutes_until, transport_mode, real_time, delay_minutes, canceled, platform, agency
-  - Extra attrs: direction, state, stop_area, deviations
+- Attributes:
+  - `upcoming`: Array of departure objects (compatible with Trafiklab Timetable Card)
+  - Each departure: line, destination, scheduled_time, expected_time, time_formatted, minutes_until, transport_mode, real_time, delay_minutes, delay, canceled, platform, agency, deviations
 
 ## SL API Data Structure
 
