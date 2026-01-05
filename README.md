@@ -54,29 +54,33 @@ After setup, click **Configure** on the integration to adjust:
 
 ## Sensors
 
-Each departure creates a sensor with:
+Each config entry creates one sensor with:
 
-**State:** Display time (e.g., "4 min", "Nu", "23:45")
+**State:** Next departure display time (e.g., "4 min", "Nu", "23:45")
 
 **Attributes** (compatible with [Trafiklab Timetable Card](https://github.com/MrSjodin/HomeAssistant_Trafiklab_Timetable_Card)):
 
 | Attribute | Description |
 |-----------|-------------|
+| `upcoming` | Array of departure objects (see below) |
+
+Each item in the `upcoming` array contains:
+
+| Field | Description |
+|-------|-------------|
 | `line` | Line number/designation |
 | `destination` | Final destination |
 | `scheduled_time` | Scheduled departure (ISO timestamp) |
 | `expected_time` | Expected departure (ISO timestamp) |
-| `time_formatted` | Display time ("4 min", "Nu", "23:45") |
-| `minutes_until` | Minutes until departure (integer) |
+| `time_formatted` | Clock time (e.g., "14:35") |
+| `minutes_until` | Minutes until departure (integer, 0 = now) |
 | `transport_mode` | TRAIN, METRO, BUS, TRAM, SHIP, FERRY |
 | `real_time` | True if real-time data available |
 | `delay_minutes` | Delay in minutes (0 = on time) |
+| `delay` | Alias for delay_minutes |
 | `canceled` | True if departure is cancelled |
 | `platform` | Platform/track number |
 | `agency` | "SL" |
-| `direction` | Direction name |
-| `state` | ATSTOP, EXPECTED, NORMALPROGRESS |
-| `stop_area` | Stop area name |
 | `deviations` | List of service alerts (if any) |
 
 ## Example Dashboard Cards

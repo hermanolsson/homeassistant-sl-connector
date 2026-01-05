@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SLDeparturesCoordinator
-from .const import DEFAULT_NUM_DEPARTURES, DOMAIN
+from .const import DOMAIN
 
 
 async def async_setup_entry(
@@ -19,17 +19,9 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up SL Departures sensors from a config entry."""
+    """Set up SL Departures sensor from a config entry."""
     coordinator: SLDeparturesCoordinator = hass.data[DOMAIN][entry.entry_id]
-    num_departures = entry.data.get("num_departures", DEFAULT_NUM_DEPARTURES)
-
-    # Create one sensor per departure slot
-    sensors = [
-        SLDeparturesSensor(coordinator, entry, index)
-        for index in range(num_departures)
-    ]
-
-    async_add_entities(sensors)
+    async_add_entities([SLDeparturesSensor(coordinator, entry)])
 
 
 # Icons for different transport modes
@@ -44,7 +36,7 @@ TRANSPORT_MODE_ICONS = {
 
 
 class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntity):
-    """Sensor showing a departure from SL public transit."""
+    """Sensor showing upcoming departures from SL public transit."""
 
     _attr_has_entity_name = True
 
@@ -52,12 +44,10 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         self,
         coordinator: SLDeparturesCoordinator,
         entry: ConfigEntry,
-        index: int,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._entry = entry
-        self._index = index
 
         site_id = entry.data["site_id"]
         site_name = entry.data["site_name"]
@@ -66,7 +56,7 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         direction_code = entry.data.get("direction_code", "")
         direction_name = entry.data.get("direction_name", "")
 
-        # Build unique_id matching config flow pattern
+        # Build unique_id
         unique_id = f"sl_departures_{site_id}"
         if transport_mode:
             unique_id += f"_{transport_mode}"
@@ -74,23 +64,18 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             unique_id += f"_line{line}"
         if direction_code:
             unique_id += f"_dir{direction_code}"
-        unique_id += f"_dep{index}"
         self._attr_unique_id = unique_id
 
-        # With has_entity_name=True, entity name is appended to device name
-        # So entity name should just be the position (Next, 2nd, 3rd...)
-        # Device name provides the full context
-        self._attr_name = self._get_position_label(index)
+        # Entity name - just "Departures" since device name provides context
+        self._attr_name = "Departures"
 
-        # Device info for grouping entities
-        # This becomes the prefix for all entity names
+        # Device info for grouping
         device_name = f"SL {site_name}"
         if line:
             device_name += f" {line}"
         if direction_name:
             device_name += f" → {direction_name}"
 
-        # Device identifier includes transport_mode and line for uniqueness
         device_id = site_id
         if transport_mode:
             device_id += f"_{transport_mode}"
@@ -110,112 +95,71 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         self._transport_mode = transport_mode
         self._attr_icon = TRANSPORT_MODE_ICONS.get(transport_mode, "mdi:train")
 
-    @staticmethod
-    def _get_position_label(index: int) -> str:
-        """Get human-readable position label."""
-        if index == 0:
-            return "Next"
-        elif index == 1:
-            return "2nd"
-        elif index == 2:
-            return "3rd"
-        else:
-            return f"{index + 1}th"
-
-    @property
-    def _departure(self) -> dict | None:
-        """Get the departure for this sensor's index."""
-        if not self.coordinator.data or len(self.coordinator.data) <= self._index:
-            return None
-        return self.coordinator.data[self._index]
-
     @property
     def native_value(self) -> str | None:
-        """Return the departure time."""
-        dep = self._departure
-        if not dep:
+        """Return the next departure time as the state."""
+        if not self.coordinator.data:
             return None
-        return dep.get("display")
+        first = self.coordinator.data[0] if self.coordinator.data else None
+        if not first:
+            return None
+        return first.get("display")
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return super().available and self._departure is not None
+        return super().available and bool(self.coordinator.data)
 
     @property
     def icon(self) -> str:
         """Return icon based on transport mode and delay status."""
         base_icon = TRANSPORT_MODE_ICONS.get(self._transport_mode, "mdi:train")
-        dep = self._departure
-        if dep:
-            delay = self._calculate_delay_minutes(dep)
+        if self.coordinator.data:
+            first = self.coordinator.data[0]
+            delay = self._calculate_delay_minutes(first)
             if delay is not None and delay > 0:
-                return "mdi:clock-alert"  # Indicate delay
+                return "mdi:clock-alert"
         return base_icon
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Return additional departure information."""
-        dep = self._departure
-        if not dep:
-            return {}
+        """Return upcoming departures array."""
+        if not self.coordinator.data:
+            return {"upcoming": []}
 
-        scheduled = dep.get("scheduled")
-        expected = dep.get("expected")
-        delay_minutes = self._calculate_delay_minutes(dep)
-        minutes_until = self._calculate_minutes_until(expected)
-        time_formatted = self._format_time(expected)
+        upcoming = []
+        for dep in self.coordinator.data:
+            scheduled = dep.get("scheduled")
+            expected = dep.get("expected")
+            delay_minutes = self._calculate_delay_minutes(dep)
+            delay = delay_minutes if delay_minutes is not None else 0
 
-        delay = delay_minutes if delay_minutes is not None else 0
+            departure = {
+                "line": dep.get("line", {}).get("designation"),
+                "destination": dep.get("destination"),
+                "scheduled_time": scheduled,
+                "expected_time": expected,
+                "time_formatted": self._format_time(expected) or "",
+                "minutes_until": self._calculate_minutes_until(expected),
+                "transport_mode": dep.get("line", {}).get("transport_mode"),
+                "real_time": dep.get("journey", {}).get("prediction_state") == "NORMAL",
+                "delay_minutes": delay,
+                "delay": delay,
+                "canceled": dep.get("state") == "CANCELLED",
+                "platform": dep.get("stop_point", {}).get("designation"),
+                "agency": "SL",
+            }
 
-        attrs = {
-            # Card-compatible attributes (Trafiklab Timetable Card)
-            "line": dep.get("line", {}).get("designation"),
-            "destination": dep.get("destination"),
-            "scheduled_time": scheduled,
-            "expected_time": expected,
-            "time_formatted": time_formatted or "",
-            "minutes_until": minutes_until,
-            "transport_mode": dep.get("line", {}).get("transport_mode"),
-            "real_time": dep.get("journey", {}).get("prediction_state") == "NORMAL",
-            "delay_minutes": delay,
-            "delay": delay,  # Alias for card compatibility
-            "canceled": dep.get("state") == "CANCELLED",
-            "platform": dep.get("stop_point", {}).get("designation"),
-            "agency": "SL",
-            # Additional useful attributes
-            "direction": dep.get("direction"),
-            "state": dep.get("state"),
-            "stop_area": dep.get("stop_area", {}).get("name"),
-        }
+            # Add deviations if any
+            deviations = dep.get("deviations", [])
+            if deviations:
+                messages = [d.get("message") for d in deviations if d.get("message")]
+                if messages:
+                    departure["deviations"] = messages
 
-        # Add deviations/messages if any
-        deviations = dep.get("deviations", [])
-        if deviations:
-            messages = [d.get("message") for d in deviations if d.get("message")]
-            if messages:
-                attrs["deviations"] = messages
+            upcoming.append(departure)
 
-        # Add 'upcoming' array format for Trafiklab Timetable Card compatibility
-        # The card prefers this format: sensor.attributes.upcoming = [departure, ...]
-        upcoming_item = {
-            "line": attrs["line"],
-            "destination": attrs["destination"],
-            "scheduled_time": scheduled,
-            "expected_time": expected,
-            "time_formatted": attrs["time_formatted"],
-            "minutes_until": minutes_until,
-            "transport_mode": attrs["transport_mode"],
-            "real_time": attrs["real_time"],
-            "delay_minutes": delay,
-            "delay": delay,
-            "canceled": attrs["canceled"],
-            "platform": attrs["platform"],
-            "agency": "SL",
-        }
-        attrs["upcoming"] = [upcoming_item]
-
-        return attrs
+        return {"upcoming": upcoming}
 
     @staticmethod
     def _calculate_delay_minutes(dep: dict) -> int | None:
@@ -241,13 +185,10 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             return 0
 
         try:
-            # API returns local Stockholm time
             expected = datetime.fromisoformat(expected_str.replace("Z", "+00:00"))
             if expected.tzinfo is None:
-                # Naive datetime - compare with naive local now
                 now = datetime.now()
             else:
-                # Timezone-aware - compare with UTC now
                 now = datetime.now(timezone.utc)
             delta = expected - now
             return max(0, int(delta.total_seconds() / 60))
@@ -261,12 +202,9 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             return None
 
         try:
-            # API returns local Stockholm time, parse and format directly
             dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                # Naive datetime - already in local time, just format
                 return dt.strftime("%H:%M")
-            # Timezone-aware - convert to local
             return dt.astimezone().strftime("%H:%M")
         except (ValueError, TypeError):
             return None
