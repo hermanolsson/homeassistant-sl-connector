@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sök efter station",
+        "description": "Ange namnet på din station för att söka.",
+        "data": {
+          "search": "Stationsnamn"
+        }
+      },
+      "select": {
+        "title": "Välj station",
+        "description": "Välj din station från träffarna nedan.",
+        "data": {
+          "site": "Station"
+        }
+      },
+      "transport_mode": {
+        "title": "Välj trafikslag",
+        "description": "Vilken typ av trafik vill du följa?",
+        "data": {
+          "transport_mode": "Trafikslag"
+        }
+      },
+      "line": {
+        "title": "Välj linje",
+        "description": "Filtrera på en specifik linje (valfritt).",
+        "data": {
+          "line": "Linje"
+        }
+      },
+      "direction": {
+        "title": "Välj riktning",
+        "description": "Filtrera avgångar efter riktning (valfritt).",
+        "data": {
+          "direction": "Riktning"
+        }
+      },
+      "count": {
+        "title": "Antal avgångar",
+        "description": "Hur många kommande avgångar vill du visa?",
+        "data": {
+          "num_departures": "Avgångar att visa"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunde inte ansluta till SL API",
+      "search_too_short": "Ange minst 2 tecken",
+      "no_matches": "Inga stationer hittades"
+    },
+    "abort": {
+      "already_configured": "Denna station/riktning är redan konfigurerad"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SL Avgångar Inställningar",
+        "description": "Konfigurera hur avgångar hämtas och filtreras.",
+        "data": {
+          "scan_interval": "Uppdateringsintervall",
+          "transport_modes": "Trafikslag",
+          "line_filter": "Linjefilter (kommaseparerat, t.ex. 43, 44)"
+        }
+      }
+    }
+  }
+}

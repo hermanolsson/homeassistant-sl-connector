@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Search for Station",
+        "description": "Enter the name of your station to search.",
+        "data": {
+          "search": "Station name"
+        }
+      },
+      "select": {
+        "title": "Select Station",
+        "description": "Choose your station from the matches below.",
+        "data": {
+          "site": "Station"
+        }
+      },
+      "transport_mode": {
+        "title": "Select Transport Mode",
+        "description": "What type of transport do you want to track?",
+        "data": {
+          "transport_mode": "Transport mode"
+        }
+      },
+      "line": {
+        "title": "Select Line",
+        "description": "Filter by a specific line (optional).",
+        "data": {
+          "line": "Line"
+        }
+      },
+      "direction": {
+        "title": "Select Direction",
+        "description": "Filter departures by direction (optional).",
+        "data": {
+          "direction": "Direction"
+        }
+      },
+      "count": {
+        "title": "Number of Departures",
+        "description": "How many upcoming departures do you want to track?",
+        "data": {
+          "num_departures": "Departures to show"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to SL API",
+      "search_too_short": "Please enter at least 2 characters",
+      "no_matches": "No stations found matching your search"
+    },
+    "abort": {
+      "already_configured": "This station/direction is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SL Departures Settings",
+        "description": "Configure how departures are fetched and filtered.",
+        "data": {
+          "scan_interval": "Update interval",
+          "transport_modes": "Transport modes",
+          "line_filter": "Line filter (comma-separated, e.g. 43, 44)"
+        }
+      }
+    }
+  }
+}
