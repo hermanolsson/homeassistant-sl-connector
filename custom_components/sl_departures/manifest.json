@@ -1,0 +1,10 @@
+{
+  "domain": "sl_departures",
+  "name": "SL Departures",
+  "codeowners": ["@hermanolsson"],
+  "config_flow": true,
+  "documentation": "https://github.com/hermanolsson/homeassistant-sl-connector",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "0.0.1"
+}
