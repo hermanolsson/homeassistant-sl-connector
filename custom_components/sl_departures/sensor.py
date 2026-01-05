@@ -164,6 +164,7 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         expected = dep.get("expected")
         delay_minutes = self._calculate_delay_minutes(dep)
         minutes_until = self._calculate_minutes_until(expected)
+        time_formatted = self._format_time(expected)
 
         attrs = {
             # Card-compatible attributes (Trafiklab Timetable Card)
@@ -171,7 +172,7 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             "destination": dep.get("destination"),
             "scheduled_time": scheduled,
             "expected_time": expected,
-            "time_formatted": dep.get("display"),
+            "time_formatted": time_formatted,
             "minutes_until": minutes_until,
             "transport_mode": dep.get("line", {}).get("transport_mode"),
             "real_time": dep.get("journey", {}).get("prediction_state") == "NORMAL",
@@ -224,3 +225,17 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             return max(0, int(delta.total_seconds() / 60))
         except (ValueError, TypeError):
             return 0
+
+    @staticmethod
+    def _format_time(time_str: str | None) -> str | None:
+        """Format ISO timestamp as HH:MM for display."""
+        if not time_str:
+            return None
+
+        try:
+            dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+            # Convert to local time for display
+            local_dt = dt.astimezone()
+            return local_dt.strftime("%H:%M")
+        except (ValueError, TypeError):
+            return None
