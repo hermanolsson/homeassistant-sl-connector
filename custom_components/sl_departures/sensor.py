@@ -212,10 +212,10 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             return None
 
     @staticmethod
-    def _calculate_minutes_until(expected_str: str | None) -> int | None:
+    def _calculate_minutes_until(expected_str: str | None) -> int:
         """Calculate minutes until departure from expected time."""
         if not expected_str:
-            return None
+            return 0
 
         try:
             expected = datetime.fromisoformat(expected_str.replace("Z", "+00:00"))
@@ -223,4 +223,4 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             delta = expected - now
             return max(0, int(delta.total_seconds() / 60))
         except (ValueError, TypeError):
-            return None
+            return 0
