@@ -196,6 +196,25 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             if messages:
                 attrs["deviations"] = messages
 
+        # Add 'upcoming' array format for Trafiklab Timetable Card compatibility
+        # The card prefers this format: sensor.attributes.upcoming = [departure, ...]
+        upcoming_item = {
+            "line": attrs["line"],
+            "destination": attrs["destination"],
+            "scheduled_time": scheduled,
+            "expected_time": expected,
+            "time_formatted": attrs["time_formatted"],
+            "minutes_until": minutes_until,
+            "transport_mode": attrs["transport_mode"],
+            "real_time": attrs["real_time"],
+            "delay_minutes": delay,
+            "delay": delay,
+            "canceled": attrs["canceled"],
+            "platform": attrs["platform"],
+            "agency": "SL",
+        }
+        attrs["upcoming"] = [upcoming_item]
+
         return attrs
 
     @staticmethod
