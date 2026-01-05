@@ -166,17 +166,20 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         minutes_until = self._calculate_minutes_until(expected)
         time_formatted = self._format_time(expected)
 
+        delay = delay_minutes if delay_minutes is not None else 0
+
         attrs = {
             # Card-compatible attributes (Trafiklab Timetable Card)
             "line": dep.get("line", {}).get("designation"),
             "destination": dep.get("destination"),
             "scheduled_time": scheduled,
             "expected_time": expected,
-            "time_formatted": time_formatted,
+            "time_formatted": time_formatted or "",
             "minutes_until": minutes_until,
             "transport_mode": dep.get("line", {}).get("transport_mode"),
             "real_time": dep.get("journey", {}).get("prediction_state") == "NORMAL",
-            "delay_minutes": delay_minutes if delay_minutes is not None else 0,
+            "delay_minutes": delay,
+            "delay": delay,  # Alias for card compatibility
             "canceled": dep.get("state") == "CANCELLED",
             "platform": dep.get("stop_point", {}).get("designation"),
             "agency": "SL",
@@ -219,8 +222,14 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             return 0
 
         try:
+            # API returns local Stockholm time
             expected = datetime.fromisoformat(expected_str.replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
+            if expected.tzinfo is None:
+                # Naive datetime - compare with naive local now
+                now = datetime.now()
+            else:
+                # Timezone-aware - compare with UTC now
+                now = datetime.now(timezone.utc)
             delta = expected - now
             return max(0, int(delta.total_seconds() / 60))
         except (ValueError, TypeError):
@@ -233,9 +242,12 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             return None
 
         try:
+            # API returns local Stockholm time, parse and format directly
             dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-            # Convert to local time for display
-            local_dt = dt.astimezone()
-            return local_dt.strftime("%H:%M")
+            if dt.tzinfo is None:
+                # Naive datetime - already in local time, just format
+                return dt.strftime("%H:%M")
+            # Timezone-aware - convert to local
+            return dt.astimezone().strftime("%H:%M")
         except (ValueError, TypeError):
             return None
