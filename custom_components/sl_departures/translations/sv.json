@@ -35,13 +35,6 @@
         "data": {
           "direction": "Riktning"
         }
-      },
-      "count": {
-        "title": "Antal avgångar",
-        "description": "Hur många kommande avgångar vill du visa?",
-        "data": {
-          "num_departures": "Avgångar att visa"
-        }
       }
     },
     "error": {

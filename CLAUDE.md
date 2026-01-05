@@ -32,13 +32,12 @@ custom_components/sl_departures/
 
 ## Config Flow
 
-6-step setup wizard:
+5-step setup wizard:
 1. **Search** - User enters station name
 2. **Select** - Pick from matching stations (uses `SelectSelectorMode.LIST`)
 3. **Transport Mode** - Select transport type (TRAIN, METRO, BUS, TRAM, SHIP, FERRY)
 4. **Line** - Select specific line or "All lines" (auto-skipped if only one line available)
 5. **Direction** - Filter by direction (fetches actual destinations from API, e.g., "→ Kungsträdgården")
-6. **Count** - Number of departures to show (1-5)
 
 ## Options Flow
 

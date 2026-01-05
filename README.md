@@ -40,7 +40,6 @@ The integration uses a UI-based configuration flow:
 3. **Transport mode** - Select type: Train, Metro, Bus, Tram, Ship, or Ferry
 4. **Line** - Select a specific line or "All lines" (auto-skipped if only one line)
 5. **Direction** - Filter by direction showing actual destinations (e.g., "→ Kungsträdgården")
-6. **Count** - Number of departures to track (1-5)
 
 ## Options
 

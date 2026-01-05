@@ -22,7 +22,6 @@ from homeassistant.helpers.selector import (
 from .const import (
     API_DEPARTURES_URL,
     API_SITES_URL,
-    DEFAULT_NUM_DEPARTURES,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     TRANSPORT_MODES,
@@ -249,7 +248,40 @@ class SLDeparturesConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._selected_direction_name = self._available_directions.get(
                     selected, ""
                 )
-            return await self.async_step_count()
+
+            # Build unique_id with transport_mode, line and direction
+            unique_id = f"sl_departures_{self._selected_site_id}"
+            if self._selected_transport_mode:
+                unique_id += f"_{self._selected_transport_mode}"
+            if self._selected_line:
+                unique_id += f"_line{self._selected_line}"
+            if self._selected_direction:
+                unique_id += f"_dir{self._selected_direction}"
+
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
+
+            # Build title
+            title = self._selected_site_name
+            if self._selected_line:
+                title = f"{title} Line {self._selected_line}"
+            direction_name = self._selected_direction_name
+            if self._selected_direction and direction_name:
+                title = f"{title} → {direction_name}"
+            elif self._selected_direction:
+                title = f"{title} Dir {self._selected_direction}"
+
+            return self.async_create_entry(
+                title=title,
+                data={
+                    "site_id": self._selected_site_id,
+                    "site_name": self._selected_site_name,
+                    "transport_mode": self._selected_transport_mode,
+                    "line": self._selected_line,
+                    "direction_code": self._selected_direction,
+                    "direction_name": direction_name,
+                },
+            )
 
         # Build direction options from fetched data
         options = [{"value": "__all__", "label": "All directions"}]
@@ -274,72 +306,6 @@ class SLDeparturesConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required("direction", default="__all__"): SelectSelector(
-                        SelectSelectorConfig(
-                            options=options,
-                            mode=SelectSelectorMode.LIST,
-                        )
-                    ),
-                }
-            ),
-        )
-
-    async def async_step_count(
-        self, user_input: dict | None = None
-    ) -> ConfigFlowResult:
-        """Step 6: Select number of departures to show."""
-        if user_input is not None:
-            num_departures = int(user_input["num_departures"])
-
-            # Build unique_id with transport_mode, line and direction
-            unique_id = f"sl_departures_{self._selected_site_id}"
-            if self._selected_transport_mode:
-                unique_id += f"_{self._selected_transport_mode}"
-            if self._selected_line:
-                unique_id += f"_line{self._selected_line}"
-            if self._selected_direction:
-                unique_id += f"_dir{self._selected_direction}"
-
-            await self.async_set_unique_id(unique_id)
-            self._abort_if_unique_id_configured()
-
-            # Build title
-            title = self._selected_site_name
-            if self._selected_line:
-                title = f"{title} Line {self._selected_line}"
-            direction_name = getattr(self, "_selected_direction_name", "")
-            if self._selected_direction and direction_name:
-                title = f"{title} → {direction_name}"
-            elif self._selected_direction:
-                title = f"{title} Dir {self._selected_direction}"
-
-            return self.async_create_entry(
-                title=title,
-                data={
-                    "site_id": self._selected_site_id,
-                    "site_name": self._selected_site_name,
-                    "transport_mode": self._selected_transport_mode,
-                    "line": self._selected_line,
-                    "direction_code": self._selected_direction,
-                    "direction_name": direction_name,
-                    "num_departures": num_departures,
-                },
-            )
-
-        options = [
-            {"value": "1", "label": "1 departure"},
-            {"value": "2", "label": "2 departures"},
-            {"value": "3", "label": "3 departures"},
-            {"value": "4", "label": "4 departures"},
-            {"value": "5", "label": "5 departures"},
-        ]
-
-        return self.async_show_form(
-            step_id="count",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        "num_departures", default=str(DEFAULT_NUM_DEPARTURES)
-                    ): SelectSelector(
                         SelectSelectorConfig(
                             options=options,
                             mode=SelectSelectorMode.LIST,

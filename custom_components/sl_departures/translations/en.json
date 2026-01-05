@@ -35,13 +35,6 @@
         "data": {
           "direction": "Direction"
         }
-      },
-      "count": {
-        "title": "Number of Departures",
-        "description": "How many upcoming departures do you want to track?",
-        "data": {
-          "num_departures": "Departures to show"
-        }
       }
     },
     "error": {
