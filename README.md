@@ -58,17 +58,26 @@ Each departure creates a sensor with:
 
 **State:** Display time (e.g., "4 min", "Nu", "23:45")
 
-**Attributes:**
-- `destination` - Final destination
-- `direction` - Direction name
-- `line` - Line number
-- `platform` - Platform/track number
-- `scheduled` - Scheduled departure time
-- `expected` - Expected departure time (real-time)
-- `delay_minutes` - Delay in minutes (0 = on time)
-- `is_delayed` - Boolean delay indicator
-- `delay_message` - Human-readable delay status
-- `deviations` - List of service alerts (if any)
+**Attributes** (compatible with [Trafiklab Timetable Card](https://github.com/MrSjodin/HomeAssistant_Trafiklab_Timetable_Card)):
+
+| Attribute | Description |
+|-----------|-------------|
+| `line` | Line number/designation |
+| `destination` | Final destination |
+| `scheduled_time` | Scheduled departure (ISO timestamp) |
+| `expected_time` | Expected departure (ISO timestamp) |
+| `time_formatted` | Display time ("4 min", "Nu", "23:45") |
+| `minutes_until` | Minutes until departure (integer) |
+| `transport_mode` | TRAIN, METRO, BUS, TRAM, SHIP, FERRY |
+| `real_time` | True if real-time data available |
+| `delay_minutes` | Delay in minutes (0 = on time) |
+| `canceled` | True if departure is cancelled |
+| `platform` | Platform/track number |
+| `agency` | "SL" |
+| `direction` | Direction name |
+| `state` | ATSTOP, EXPECTED, NORMALPROGRESS |
+| `stop_area` | Stop area name |
+| `deviations` | List of service alerts (if any) |
 
 ## Example Dashboard Cards
 
@@ -77,9 +86,10 @@ Each departure creates a sensor with:
 type: markdown
 title: Pendeltåg från Barkarby
 content: |
-  {% set s = 'sensor.barkarby_southbound_next' %}
-  **{{ states(s) }}** → {{ state_attr(s, 'destination') }}
-  Spår {{ state_attr(s, 'platform') }} · {{ state_attr(s, 'delay_message') }}
+  {% set s = 'sensor.sl_barkarby_40_next' %}
+  **{{ state_attr(s, 'time_formatted') }}** → {{ state_attr(s, 'destination') }}
+  Spår {{ state_attr(s, 'platform') }}
+  {% if state_attr(s, 'delay_minutes') > 0 %}· Försenad {{ state_attr(s, 'delay_minutes') }} min{% endif %}
 ```
 
 ### Entities Card
@@ -87,15 +97,15 @@ content: |
 type: entities
 title: Nästa tåg
 entities:
-  - entity: sensor.barkarby_southbound_next
+  - entity: sensor.sl_barkarby_40_next
   - type: attribute
-    entity: sensor.barkarby_southbound_next
+    entity: sensor.sl_barkarby_40_next
     attribute: destination
     name: Destination
   - type: attribute
-    entity: sensor.barkarby_southbound_next
-    attribute: delay_message
-    name: Status
+    entity: sensor.sl_barkarby_40_next
+    attribute: minutes_until
+    name: Minutes
 ```
 
 ## API

@@ -1,7 +1,7 @@
 """Sensor platform for SL Departures."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -163,26 +163,27 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         scheduled = dep.get("scheduled")
         expected = dep.get("expected")
         delay_minutes = self._calculate_delay_minutes(dep)
+        minutes_until = self._calculate_minutes_until(expected)
 
         attrs = {
-            "destination": dep.get("destination"),
-            "direction": dep.get("direction"),
+            # Card-compatible attributes (Trafiklab Timetable Card)
             "line": dep.get("line", {}).get("designation"),
-            "scheduled": scheduled,
-            "expected": expected,
+            "destination": dep.get("destination"),
+            "scheduled_time": scheduled,
+            "expected_time": expected,
+            "time_formatted": dep.get("display"),
+            "minutes_until": minutes_until,
+            "transport_mode": dep.get("line", {}).get("transport_mode"),
+            "real_time": dep.get("journey", {}).get("prediction_state") == "NORMAL",
+            "delay_minutes": delay_minutes if delay_minutes is not None else 0,
+            "canceled": dep.get("state") == "CANCELLED",
+            "platform": dep.get("stop_point", {}).get("designation"),
+            "agency": "SL",
+            # Additional useful attributes
+            "direction": dep.get("direction"),
             "state": dep.get("state"),
             "stop_area": dep.get("stop_area", {}).get("name"),
-            "platform": dep.get("stop_point", {}).get("designation"),
         }
-
-        # Add delay info
-        if delay_minutes is not None:
-            attrs["delay_minutes"] = delay_minutes
-            attrs["is_delayed"] = delay_minutes > 0
-            if delay_minutes > 0:
-                attrs["delay_message"] = f"Delayed {delay_minutes} min"
-            else:
-                attrs["delay_message"] = "On time"
 
         # Add deviations/messages if any
         deviations = dep.get("deviations", [])
@@ -207,5 +208,19 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             expected = datetime.fromisoformat(expected_str.replace("Z", "+00:00"))
             delay = expected - scheduled
             return int(delay.total_seconds() / 60)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _calculate_minutes_until(expected_str: str | None) -> int | None:
+        """Calculate minutes until departure from expected time."""
+        if not expected_str:
+            return None
+
+        try:
+            expected = datetime.fromisoformat(expected_str.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            delta = expected - now
+            return max(0, int(delta.total_seconds() / 60))
         except (ValueError, TypeError):
             return None
