@@ -95,15 +95,23 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         self._transport_mode = transport_mode
         self._attr_icon = TRANSPORT_MODE_ICONS.get(transport_mode, "mdi:train")
 
-    @property
-    def native_value(self) -> str | None:
-        """Return the next departure time as the state."""
+    def _get_next_active_departure(self) -> dict | None:
+        """Get the first non-cancelled departure."""
         if not self.coordinator.data:
             return None
-        first = self.coordinator.data[0] if self.coordinator.data else None
-        if not first:
+        for dep in self.coordinator.data:
+            journey_state = dep.get("journey", {}).get("state", "")
+            if journey_state != "CANCELLED":
+                return dep
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the next non-cancelled departure time as the state."""
+        dep = self._get_next_active_departure()
+        if not dep:
             return None
-        return first.get("display")
+        return dep.get("display")
 
     @property
     def available(self) -> bool:
@@ -114,9 +122,9 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
     def icon(self) -> str:
         """Return icon based on transport mode and delay status."""
         base_icon = TRANSPORT_MODE_ICONS.get(self._transport_mode, "mdi:train")
-        if self.coordinator.data:
-            first = self.coordinator.data[0]
-            delay = self._calculate_delay_minutes(first)
+        dep = self._get_next_active_departure()
+        if dep:
+            delay = self._calculate_delay_minutes(dep)
             if delay is not None and delay > 0:
                 return "mdi:clock-alert"
         return base_icon
