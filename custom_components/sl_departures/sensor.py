@@ -111,6 +111,17 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         dep = self._get_next_active_departure()
         if not dep:
             return None
+        # Use expected time (accounts for delays) instead of display (may be scheduled)
+        expected = dep.get("expected")
+        if expected:
+            minutes = self._calculate_minutes_until(expected)
+            if minutes == 0:
+                return "Nu"
+            elif minutes < 60:
+                return f"{minutes} min"
+            else:
+                return self._format_time(expected)
+        # Fallback to API display
         return dep.get("display")
 
     @property
