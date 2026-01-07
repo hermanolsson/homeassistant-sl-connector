@@ -134,6 +134,10 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
             delay_minutes = self._calculate_delay_minutes(dep)
             delay = delay_minutes if delay_minutes is not None else 0
 
+            # Check journey.state for cancellation (not top-level state)
+            journey_state = dep.get("journey", {}).get("state", "")
+            is_canceled = journey_state == "CANCELLED"
+
             departure = {
                 "line": dep.get("line", {}).get("designation"),
                 "destination": dep.get("destination"),
@@ -145,7 +149,7 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
                 "real_time": dep.get("journey", {}).get("prediction_state") == "NORMAL",
                 "delay_minutes": delay,
                 "delay": delay,
-                "canceled": dep.get("state") == "CANCELLED",
+                "canceled": is_canceled,
                 "platform": dep.get("stop_point", {}).get("designation"),
                 "agency": "SL",
             }
