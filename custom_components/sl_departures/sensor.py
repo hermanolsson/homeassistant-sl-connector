@@ -110,7 +110,7 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         """Return the next non-cancelled departure time as the state."""
         dep = self._get_next_active_departure()
         if not dep:
-            return None
+            return "—"  # No active departures
         # Use expected time (accounts for delays) instead of display (may be scheduled)
         expected = dep.get("expected")
         if expected:
@@ -127,7 +127,8 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return super().available and bool(self.coordinator.data)
+        # Stay available even with no departures (show "—" state instead)
+        return super().available
 
     @property
     def icon(self) -> str:
