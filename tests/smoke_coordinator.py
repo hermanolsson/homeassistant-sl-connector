@@ -2,7 +2,7 @@
 import asyncio
 import sys
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, ".")
 from homeassistant.core import HomeAssistant
@@ -96,6 +96,35 @@ async def main():
     # Unregister bookkeeping
     assert c.unregister_entry(entry("a")) == 1
     assert c.unregister_entry(entry("b")) == 0
+    # Setup with a failing first fetch must not raise (no HA-level retry storm);
+    # the coordinator keeps the site and retries on its own back-off schedule.
+    hass2 = HomeAssistant(tempfile.mkdtemp())
+    hass2.config_entries = MagicMock()
+    hass2.config_entries.async_forward_entry_setups = AsyncMock()
+    e = entry("s1")
+    e.data = {"site_id": "1080"}
+    calls = []
+    fail = FakeSession([FakeResponse(429), FakeResponse(429)])
+    with patch.object(sl, "async_get_clientsession", return_value=fail):
+        assert await sl.async_setup_entry(hass2, e) is True
+    coord = hass2.data[sl.DOMAIN]["sites"]["1080"]
+    assert not coord.last_update_success and coord.data is None
+    assert coord.update_interval.total_seconds() == 2 * sl.DEFAULT_SCAN_INTERVAL
+    coord.async_add_listener(lambda: None)  # what the sensor does
+    assert coord._unsub_refresh is not None, "retry must be scheduled once a sensor listens"
+    coord._unschedule_refresh()
+
+    # Second entry on the same site reuses the coordinator; unloading one keeps it.
+    e2 = entry("s2")
+    e2.data = {"site_id": "1080"}
+    assert await sl.async_setup_entry(hass2, e2) is True
+    assert hass2.data[sl.DOMAIN]["sites"]["1080"] is coord
+    hass2.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    assert await sl.async_unload_entry(hass2, e) is True
+    assert "1080" in hass2.data[sl.DOMAIN]["sites"]
+    assert await sl.async_unload_entry(hass2, e2) is True
+    assert "1080" not in hass2.data[sl.DOMAIN]["sites"]
+
     print("SMOKE OK")
 
 

@@ -10,7 +10,6 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -48,15 +47,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     is_new = coordinator is None
     if is_new:
         coordinator = SLSiteCoordinator(hass, site_id)
+        sites[site_id] = coordinator
     coordinator.register_entry(entry)
 
     if is_new:
+        # Never fail setup on a bad first fetch: a ConfigEntryNotReady makes HA
+        # retry every few seconds, which is exactly what a rate-limited API
+        # doesn't need. The coordinator retries on its own back-off schedule and
+        # the sensors are unavailable until the first success.
         await coordinator.async_refresh()
-        if not coordinator.last_update_success:
-            coordinator.unregister_entry(entry)
-            await coordinator.async_shutdown()
-            raise ConfigEntryNotReady(f"Could not fetch departures for site {site_id}")
-        sites[site_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
