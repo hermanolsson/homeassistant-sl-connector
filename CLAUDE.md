@@ -34,7 +34,7 @@ custom_components/sl_departures/
 ## Polling & Rate Limits
 
 - One `SLSiteCoordinator` per `site_id`, shared by all entries for that site; each sensor applies its own `DepartureFilter` (mode/line/direction) to the shared raw departures.
-- On 429/5xx/timeouts the coordinator backs off exponentially (honouring `Retry-After`, capped at 10 min) and keeps serving the last good data for up to 10 min before sensors go unavailable.
+- On 429/5xx/timeouts the coordinator retries at the normal interval, then at 2x it (plus up to 10% jitter), honouring `Retry-After` (capped at 10 min), and keeps serving the last good data for up to 10 min before sensors go unavailable. SL's 429s (`Quota has been exceeded`) come from a quota shared by all keyless callers, so long exponential back-offs only waste chances to get through. Sensors drop departures that left >60s ago, so cached data never shows a departed train. Recovery after a failure streak is logged at WARNING (HA logs only the first failure of a streak).
 - Default poll interval is 120s (`DEFAULT_SCAN_INTERVAL`). Setup never fails on a bad first fetch (no `ConfigEntryNotReady` retry storm); sensors stay unavailable until the coordinator's own back-off retry succeeds.
 - Tests: `python3 -m unittest discover -s tests` (helpers, no HA needed). `tests/smoke_coordinator.py` needs `homeassistant` installed.
 

@@ -18,6 +18,7 @@ from .api import (
     backoff_seconds,
     is_backoff_status,
     parse_retry_after,
+    with_jitter,
 )
 from .const import (
     API_DEPARTURES_URL,
@@ -145,7 +146,9 @@ class SLSiteCoordinator(DataUpdateCoordinator[list[dict]]):
             return self._handle_failure(str(err) or type(err).__name__, None)
 
         if self._failures:
-            _LOGGER.info("Site %s: API recovered after %d failures", self.site_id, self._failures)
+            _LOGGER.warning(
+                "Site %s: API recovered after %d failed attempts", self.site_id, self._failures
+            )
         self._failures = 0
         self._last_success = time.monotonic()
         self.update_interval = timedelta(seconds=self._base_seconds)
@@ -157,7 +160,9 @@ class SLSiteCoordinator(DataUpdateCoordinator[list[dict]]):
     def _handle_failure(self, reason: str, retry_after: int | None) -> list[dict]:
         """Back off, and keep serving recent data if we have it."""
         self._failures += 1
-        delay = backoff_seconds(self._base_seconds, self._failures, retry_after)
+        delay = round(
+            with_jitter(backoff_seconds(self._base_seconds, self._failures, retry_after))
+        )
         self.update_interval = timedelta(seconds=delay)
 
         stale_for = (

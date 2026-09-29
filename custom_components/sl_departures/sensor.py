@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SLSiteCoordinator, _sites
-from .api import DepartureFilter
+from .api import DepartureFilter, drop_departed
 from .const import DOMAIN
 
 
@@ -99,8 +99,9 @@ class SLDeparturesSensor(CoordinatorEntity[SLSiteCoordinator], SensorEntity):
 
     @property
     def _departures(self) -> list[dict]:
-        """Return this entry's departures from the shared site data."""
-        return self._filter.apply(self.coordinator.data or [])
+        """Return this entry's upcoming departures from the shared site data."""
+        departures = self._filter.apply(self.coordinator.data or [])
+        return drop_departed(departures, datetime.now(timezone.utc))
 
     def _get_next_active_departure(self) -> dict | None:
         """Get the first non-cancelled departure."""

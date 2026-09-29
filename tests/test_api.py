@@ -1,4 +1,5 @@
 """Tests for the dependency-free helpers in sl_departures.api."""
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import pathlib
 import sys
@@ -29,21 +30,69 @@ class ParseRetryAfterTest(unittest.TestCase):
 
 
 class BackoffSecondsTest(unittest.TestCase):
-    def test_doubles_per_failure(self):
-        self.assertEqual(api.backoff_seconds(60, 1), 120)
-        self.assertEqual(api.backoff_seconds(60, 2), 240)
+    def test_first_failure_retries_at_normal_interval(self):
+        self.assertEqual(api.backoff_seconds(120, 1), 120)
 
-    def test_capped(self):
-        self.assertEqual(api.backoff_seconds(60, 10), api.MAX_BACKOFF)
+    def test_later_failures_capped_at_twice_the_interval(self):
+        self.assertEqual(api.backoff_seconds(120, 2), 240)
+        self.assertEqual(api.backoff_seconds(120, 10), 240)
 
     def test_retry_after_wins_when_larger(self):
         self.assertEqual(api.backoff_seconds(60, 1, retry_after=300), 300)
 
     def test_retry_after_does_not_shorten_backoff(self):
-        self.assertEqual(api.backoff_seconds(60, 2, retry_after=5), 240)
+        self.assertEqual(api.backoff_seconds(60, 3, retry_after=5), 120)
 
     def test_retry_after_capped(self):
         self.assertEqual(api.backoff_seconds(60, 1, retry_after=99999), api.MAX_BACKOFF)
+
+
+class WithJitterTest(unittest.TestCase):
+    def test_bounds(self):
+        self.assertEqual(api.with_jitter(100, 0.1, rand=lambda: 0.0), 100)
+        self.assertAlmostEqual(api.with_jitter(100, 0.1, rand=lambda: 1.0), 110)
+
+    def test_default_random_stays_in_range(self):
+        for _ in range(100):
+            self.assertTrue(100 <= api.with_jitter(100, 0.1) <= 110)
+
+
+class DropDepartedTest(unittest.TestCase):
+    NOW = datetime(2026, 9, 29, 10, 0, tzinfo=timezone.utc)
+
+    @staticmethod
+    def d(expected=None, scheduled=None):
+        out = {}
+        if expected:
+            out["expected"] = expected
+        if scheduled:
+            out["scheduled"] = scheduled
+        return out
+
+    def test_drops_departed_keeps_upcoming_and_grace(self):
+        gone = self.d("2026-09-29T09:58:00Z")
+        just_left = self.d("2026-09-29T09:59:30Z")  # inside 60s grace: shows "Nu"
+        later = self.d("2026-09-29T10:05:00Z")
+        self.assertEqual(api.drop_departed([gone, just_left, later], self.NOW), [just_left, later])
+
+    def test_falls_back_to_scheduled_then_keeps_unknown(self):
+        old_sched = self.d(scheduled="2026-09-29T09:00:00Z")
+        unknown = self.d()
+        self.assertEqual(api.drop_departed([old_sched, unknown], self.NOW), [unknown])
+
+    def test_expected_beats_scheduled(self):
+        delayed = self.d(expected="2026-09-29T10:10:00Z", scheduled="2026-09-29T09:00:00Z")
+        self.assertEqual(api.drop_departed([delayed], self.NOW), [delayed])
+
+    def test_naive_timestamps_are_local_time(self):
+        five_min_ago = (self.NOW - timedelta(minutes=5)).astimezone().replace(tzinfo=None)
+        in_five = (self.NOW + timedelta(minutes=5)).astimezone().replace(tzinfo=None)
+        gone, coming = self.d(five_min_ago.isoformat()), self.d(in_five.isoformat())
+        self.assertEqual(api.drop_departed([gone, coming], self.NOW), [coming])
+
+    def test_garbage_timestamp_is_kept(self):
+        junk = self.d("not-a-time")
+        self.assertEqual(api.drop_departed([junk], self.NOW), [junk])
 
 
 class IsRetryableStatusTest(unittest.TestCase):
