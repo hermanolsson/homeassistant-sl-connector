@@ -10,7 +10,8 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import SLDeparturesCoordinator
+from . import SLSiteCoordinator, _sites
+from .api import DepartureFilter
 from .const import DOMAIN
 
 
@@ -20,7 +21,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up SL Departures sensor from a config entry."""
-    coordinator: SLDeparturesCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = _sites(hass)[entry.data["site_id"]]
     async_add_entities([SLDeparturesSensor(coordinator, entry)])
 
 
@@ -35,19 +36,20 @@ TRANSPORT_MODE_ICONS = {
 }
 
 
-class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntity):
+class SLDeparturesSensor(CoordinatorEntity[SLSiteCoordinator], SensorEntity):
     """Sensor showing upcoming departures from SL public transit."""
 
     _attr_has_entity_name = True
 
     def __init__(
         self,
-        coordinator: SLDeparturesCoordinator,
+        coordinator: SLSiteCoordinator,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._entry = entry
+        self._filter = DepartureFilter.from_entry(dict(entry.data), dict(entry.options))
 
         site_id = entry.data["site_id"]
         site_name = entry.data["site_name"]
@@ -95,11 +97,14 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
         self._transport_mode = transport_mode
         self._attr_icon = TRANSPORT_MODE_ICONS.get(transport_mode, "mdi:train")
 
+    @property
+    def _departures(self) -> list[dict]:
+        """Return this entry's departures from the shared site data."""
+        return self._filter.apply(self.coordinator.data or [])
+
     def _get_next_active_departure(self) -> dict | None:
         """Get the first non-cancelled departure."""
-        if not self.coordinator.data:
-            return None
-        for dep in self.coordinator.data:
+        for dep in self._departures:
             journey_state = dep.get("journey", {}).get("state", "")
             if journey_state != "CANCELLED":
                 return dep
@@ -144,11 +149,8 @@ class SLDeparturesSensor(CoordinatorEntity[SLDeparturesCoordinator], SensorEntit
     @property
     def extra_state_attributes(self) -> dict:
         """Return upcoming departures array."""
-        if not self.coordinator.data:
-            return {"upcoming": []}
-
         upcoming = []
-        for dep in self.coordinator.data:
+        for dep in self._departures:
             scheduled = dep.get("scheduled")
             expected = dep.get("expected")
             delay_minutes = self._calculate_delay_minutes(dep)

@@ -3,15 +3,23 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import time
 
 import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .api import (
+    MAX_STALE_SECONDS,
+    backoff_seconds,
+    is_backoff_status,
+    parse_retry_after,
+)
 from .const import (
     API_DEPARTURES_URL,
     DEFAULT_SCAN_INTERVAL,
@@ -22,15 +30,33 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
 
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
+
+
+def _sites(hass: HomeAssistant) -> dict[str, SLSiteCoordinator]:
+    """Return the site_id -> shared coordinator registry."""
+    return hass.data.setdefault(DOMAIN, {}).setdefault("sites", {})
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SL Departures from a config entry."""
     _LOGGER.debug("Setting up entry %s with data: %s", entry.entry_id, dict(entry.data))
-    coordinator = SLDeparturesCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    site_id = entry.data["site_id"]
+    sites = _sites(hass)
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    coordinator = sites.get(site_id)
+    is_new = coordinator is None
+    if is_new:
+        coordinator = SLSiteCoordinator(hass, site_id)
+    coordinator.register_entry(entry)
+
+    if is_new:
+        await coordinator.async_refresh()
+        if not coordinator.last_update_success:
+            coordinator.unregister_entry(entry)
+            await coordinator.async_shutdown()
+            raise ConfigEntryNotReady(f"Could not fetch departures for site {site_id}")
+        sites[site_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -47,111 +73,105 @@ async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        sites = _sites(hass)
+        coordinator = sites.get(entry.data["site_id"])
+        if coordinator is not None and coordinator.unregister_entry(entry) == 0:
+            sites.pop(entry.data["site_id"])
+            await coordinator.async_shutdown()
 
     return unload_ok
 
 
-class SLDeparturesCoordinator(DataUpdateCoordinator[list[dict]]):
-    """Coordinator to fetch departure data from SL API."""
+class SLSiteCoordinator(DataUpdateCoordinator[list[dict]]):
+    """Fetches the departures of one SL site, shared by all entries using it.
 
-    config_entry: ConfigEntry
+    Holds the unfiltered departures; each sensor applies its own filter. Backs
+    off on 429/5xx and serves the last good data for a while when the API fails.
+    """
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, site_id: str) -> None:
         """Initialize the coordinator."""
-        self.entry = entry
+        self.site_id = site_id
+        self._scan_intervals: dict[str, int] = {}
+        self._base_seconds = DEFAULT_SCAN_INTERVAL
+        self._failures = 0
+        self._last_success: float | None = None
 
-        # Get config data
-        self.site_id = entry.data["site_id"]
-        self.direction_code = entry.data.get("direction_code", "")
-        # Transport mode from config data (new entries) or options (legacy)
-        self.transport_mode = entry.data.get("transport_mode")
-        # Line filter from config data (new entries) or options (legacy)
-        self.line_from_config = entry.data.get("line", "")
-
-        # Get options (with defaults)
-        options = entry.options
-        scan_interval = options.get("scan_interval", DEFAULT_SCAN_INTERVAL)
-        # Legacy: transport_modes from options (for old entries without transport_mode in data)
-        if self.transport_mode:
-            self.transport_modes = [self.transport_mode]
-        else:
-            self.transport_modes = options.get("transport_modes", ["TRAIN"])
-        # Line filter: prefer config data, fall back to options
-        if self.line_from_config:
-            self.line_filter = self.line_from_config
-        else:
-            self.line_filter = options.get("line_filter", "")
-
-        _LOGGER.debug(
-            "Coordinator init for site %s: transport_modes=%s, line=%s, direction=%s",
-            self.site_id,
-            self.transport_modes,
-            self.line_filter,
-            self.direction_code,
-        )
-
+        # config_entry=None: the coordinator outlives any single entry, so it
+        # must not be shut down when the entry that created it unloads.
         super().__init__(
             hass,
             _LOGGER,
-            name=f"SL Departures {self.site_id}",
-            update_interval=timedelta(seconds=scan_interval),
+            name=f"SL Departures {site_id}",
+            config_entry=None,
+            update_interval=timedelta(seconds=self._base_seconds),
         )
-
         self._session = async_get_clientsession(hass)
+
+    def register_entry(self, entry: ConfigEntry) -> None:
+        """Attach an entry; poll as often as the most demanding entry wants."""
+        self._scan_intervals[entry.entry_id] = entry.options.get(
+            "scan_interval", DEFAULT_SCAN_INTERVAL
+        )
+        self._update_base_interval()
+
+    def unregister_entry(self, entry: ConfigEntry) -> int:
+        """Detach an entry and return how many entries remain."""
+        self._scan_intervals.pop(entry.entry_id, None)
+        if self._scan_intervals:
+            self._update_base_interval()
+        return len(self._scan_intervals)
+
+    def _update_base_interval(self) -> None:
+        self._base_seconds = min(self._scan_intervals.values())
+        if self._failures == 0:
+            self.update_interval = timedelta(seconds=self._base_seconds)
 
     async def _async_update_data(self) -> list[dict]:
         """Fetch departure data from SL API."""
         url = API_DEPARTURES_URL.format(site_id=self.site_id)
 
         try:
-            async with self._session.get(url) as response:
+            async with self._session.get(url, timeout=REQUEST_TIMEOUT) as response:
+                if is_backoff_status(response.status):
+                    retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                    return self._handle_failure(
+                        f"HTTP {response.status} {response.reason}", retry_after
+                    )
                 response.raise_for_status()
                 data = await response.json()
-        except aiohttp.ClientError as err:
-            raise UpdateFailed(f"Error fetching data: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            return self._handle_failure(str(err) or type(err).__name__, None)
+
+        if self._failures:
+            _LOGGER.info("Site %s: API recovered after %d failures", self.site_id, self._failures)
+        self._failures = 0
+        self._last_success = time.monotonic()
+        self.update_interval = timedelta(seconds=self._base_seconds)
 
         departures = data.get("departures", [])
+        _LOGGER.debug("Site %s: Got %d departures", self.site_id, len(departures))
+        return departures
 
-        _LOGGER.debug(
-            "Site %s: Got %d departures, filtering by modes=%s",
-            self.site_id,
-            len(departures),
-            self.transport_modes,
+    def _handle_failure(self, reason: str, retry_after: int | None) -> list[dict]:
+        """Back off, and keep serving recent data if we have it."""
+        self._failures += 1
+        delay = backoff_seconds(self._base_seconds, self._failures, retry_after)
+        self.update_interval = timedelta(seconds=delay)
+
+        stale_for = (
+            time.monotonic() - self._last_success
+            if self._last_success is not None
+            else None
         )
-
-        # Filter by transport modes
-        filtered = [
-            dep for dep in departures
-            if dep.get("line", {}).get("transport_mode") in self.transport_modes
-        ]
-
-        _LOGGER.debug(
-            "Site %s: After transport mode filter: %d departures",
-            self.site_id,
-            len(filtered),
-        )
-
-        # Filter by direction if specified
-        if self.direction_code:
-            filtered = [
-                dep for dep in filtered
-                if str(dep.get("direction_code")) == self.direction_code
-            ]
-            _LOGGER.debug(
-                "Site %s: After direction filter (code=%s): %d departures",
-                self.site_id,
-                self.direction_code,
-                len(filtered),
+        if self.data is not None and stale_for is not None and stale_for <= MAX_STALE_SECONDS:
+            log = _LOGGER.warning if self._failures == 1 else _LOGGER.debug
+            log(
+                "Site %s: %s; serving departures from %ds ago, retrying in %ds",
+                self.site_id, reason, stale_for, delay,
             )
+            return self.data
 
-        # Filter by line if specified
-        if self.line_filter:
-            line_numbers = [ln.strip() for ln in self.line_filter.split(",")]
-            filtered = [
-                dep for dep in filtered
-                if dep.get("line", {}).get("designation") in line_numbers
-            ]
-
-        return filtered
+        raise UpdateFailed(f"Error fetching data: {reason} (retrying in {delay}s)")

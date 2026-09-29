@@ -17,7 +17,8 @@ No API key required - publicly accessible.
 
 ```
 custom_components/sl_departures/
-├── __init__.py      # Integration setup & data coordinator
+├── __init__.py      # Integration setup & shared per-site data coordinator
+├── api.py           # HA-independent helpers: back-off maths, departure filtering
 ├── config_flow.py   # UI configuration flow + options flow
 ├── const.py         # Constants (domain, API URLs, transport modes)
 ├── manifest.json    # Integration metadata
@@ -29,6 +30,12 @@ custom_components/sl_departures/
     ├── en.json      # English translations
     └── sv.json      # Swedish translations
 ```
+
+## Polling & Rate Limits
+
+- One `SLSiteCoordinator` per `site_id`, shared by all entries for that site; each sensor applies its own `DepartureFilter` (mode/line/direction) to the shared raw departures.
+- On 429/5xx/timeouts the coordinator backs off exponentially (honouring `Retry-After`, capped at 10 min) and keeps serving the last good data for up to 10 min before sensors go unavailable.
+- Tests: `python3 -m unittest discover -s tests` (helpers, no HA needed). `tests/smoke_coordinator.py` needs `homeassistant` installed.
 
 ## Config Flow
 
